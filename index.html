@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Bodega VCA</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f172a; --surface: #1e293b; --primary: #3b82f6;
+            --accent: #f59e0b; --text: #f8fafc; --text-muted: #94a3b8;
+            --success: #10b981; --danger: #ef4444; --purple: #8b5cf6;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 60px; font-size: 14px; }
+        
+        .header {
+            background: var(--surface); padding: 12px 20px; display: flex;
+            justify-content: space-between; align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1); position: sticky; top: 0; z-index: 100;
+        }
+        .header-left h1 { font-size: 1.1rem; color: var(--primary); }
+        .header-left .subtitle { font-size: 0.75rem; color: var(--text-muted); }
+        .header-actions { display: flex; gap: 6px; align-items: center; }
+
+        .sync-badge {
+            display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+            border-radius: 20px; font-size: 0.75rem; font-weight: 700;
+            background: rgba(148, 163, 184, 0.15); color: var(--text-muted);
+            cursor: pointer; transition: 0.2s;
+        }
+        .sync-badge.connected { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+        .sync-badge.syncing { background: rgba(59, 130, 246, 0.15); color: var(--primary); }
+        .sync-badge.error { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+        .sync-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+        .nav {
+            display: flex; gap: 4px; padding: 8px; background: var(--surface);
+            overflow-x: auto; position: sticky; top: 60px; z-index: 99;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .nav-btn {
+            padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
+            background: transparent; color: var(--text-muted); font-weight: 600;
+            font-size: 0.82rem; cursor: pointer; white-space: nowrap; transition: all 0.2s;
+        }
+        .nav-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+        .container { padding: 15px; max-width: 900px; margin: 0 auto; }
+        .tab-content { display: none; animation: fadeIn 0.3s; }
+        .tab-content.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .card {
+            background: var(--surface); border-radius: 12px; padding: 15px;
+            margin-bottom: 15px; border: 1px solid rgba(255,255,255,0.05);
+        }
+        .card h2 { font-size: 1.05rem; color: var(--primary); margin-bottom: 12px; }
+        .card h3 { font-size: 0.9rem; color: var(--accent); margin: 12px 0 8px; }
+        
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 5px; font-weight: 600; }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
+            background: #0b1120; color: var(--text); font-size: 0.9rem; outline: none;
+        }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+        .btn {
+            padding: 11px 18px; border-radius: 8px; border: none; font-weight: 600;
+            font-size: 0.9rem; cursor: pointer; transition: 0.2s; width: 100%;
+            display: flex; justify-content: center; align-items: center; gap: 6px;
+        }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-success:hover { background: #059669; }
+        .btn-warning { background: var(--accent); color: #0b1120; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-purple { background: var(--purple); color: white; }
+        .btn-small { padding: 6px 10px; font-size: 0.78rem; width: auto; }
+
+        .list-item {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #0b1120; padding: 10px 12px; border-radius: 8px; margin-bottom: 6px;
+            border-left: 3px solid var(--primary); font-size: 0.85rem;
+        }
+        .list-item.danger { border-left-color: var(--danger); }
+        .list-item.success { border-left-color: var(--success); }
+        .list-item.warning { border-left-color: var(--accent); }
+        .item-info strong { display: block; font-size: 0.9rem; margin-bottom: 2px; }
+        .item-info span { font-size: 0.78rem; color: var(--text-muted); }
+        .item-actions { display: flex; gap: 6px; }
+
+        .badge {
+            display: inline-block; padding: 2px 8px; border-radius: 12px;
+            font-size: 0.7rem; font-weight: 700; margin-left: 6px;
+        }
+        .badge-fijo { background: rgba(59,130,246,0.2); color: var(--primary); }
+        .badge-móvil { background: rgba(245,158,11,0.2); color: var(--accent); }
+        .badge-desechable { background: rgba(239,68,68,0.2); color: var(--danger); }
+
+        .alert-box {
+            background: rgba(245, 158, 11, 0.1); border-left: 4px solid var(--accent);
+            padding: 12px; border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 0.85rem;
+        }
+        .alert-box.success { background: rgba(16,185,129,0.1); border-left-color: var(--success); }
+        .alert-box.danger { background: rgba(239,68,68,0.1); border-left-color: var(--danger); }
+
+        .route-step {
+            display: flex; gap: 12px; align-items: center; background: #0b1120;
+            padding: 10px 12px; border-radius: 8px; margin-bottom: 8px;
+            border-left: 3px solid var(--accent); font-size: 0.85rem;
+        }
+        .route-step.final { border-left-color: var(--success); background: rgba(16,185,129,0.05); }
+        .step-num {
+            background: var(--accent); color: #0b1120; width: 26px; height: 26px;
+            border-radius: 50%; display: flex; justify-content: center; align-items: center;
+            font-weight: 800; font-size: 0.8rem; flex-shrink: 0;
+        }
+        .route-step.final .step-num { background: var(--success); color: white; }
+        .step-info { flex: 1; }
+        .step-info strong { display: block; font-size: 0.88rem; }
+        .step-info span { font-size: 0.75rem; color: var(--text-muted); }
+        .step-qty { font-size: 1rem; font-weight: 800; color: var(--accent); }
+
+        .toast {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px);
+            background: var(--surface); color: var(--text); padding: 12px 24px;
+            border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            transition: 0.3s; z-index: 200; border: 1px solid var(--primary);
+            font-weight: 600; opacity: 0; pointer-events: none; max-width: 90vw; text-align: center;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+        .empty-state { text-align: center; padding: 30px; color: var(--text-muted); font-size: 0.9rem; }
+        .empty-state .icon { font-size: 2.5rem; margin-bottom: 10px; opacity: 0.5; }
+
+        .file-input-wrap {
+            border: 2px dashed rgba(255,255,255,0.15); border-radius: 12px;
+            padding: 30px; text-align: center; cursor: pointer; transition: 0.2s;
+        }
+        .file-input-wrap:hover { border-color: var(--primary); background: rgba(59,130,246,0.05); }
+        .file-input-wrap input { display: none; }
+        .file-input-wrap .icon { font-size: 2rem; margin-bottom: 8px; }
+
+        .signature-canvas {
+            border: 2px dashed rgba(255,255,255,0.2); border-radius: 8px;
+            background: white; touch-action: none; width: 100%; height: 200px;
+        }
+
+        .modal {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+            display: none; justify-content: center; align-items: center; z-index: 1000; padding: 15px;
+        }
+        .modal.show { display: flex; }
+        .modal-content {
+            background: var(--surface); border-radius: 12px; padding: 20px;
+            max-width: 500px; width: 100%; max-height: 90vh; overflow-y: auto;
+        }
+        .modal-content h2 { margin-bottom: 15px; color: var(--primary); font-size: 1.1rem; }
+        .modal-btns { display: flex; gap: 8px; margin-top: 15px; }
+        .modal-btns .btn { flex: 1; }
+
+        .spinner {
+            display: inline-block; width: 14px; height: 14px;
+            border: 2px solid rgba(255,255,255,0.2); border-top-color: currentColor;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="header-left">
+            <h1>Sistema Bodega VCA</h1>
+            <div class="subtitle" id="syncStatusText">Sin configurar</div>
+        </div>
+        <div class="header-actions">
+            <div class="sync-badge" id="syncBadge" onclick="abrirModalSync()">
+                <span class="dot"></span>
+                <span id="syncBadgeText">Sync</span>
+            </div>
+            <button class="btn btn-small btn-danger" onclick="resetAll()">🗑️</button>
+        </div>
+    </div>
+
+    <div class="nav">
+        <button class="nav-btn active" onclick="openTab('inicio', event)">🏠 Inicio</button>
+        <button class="nav-btn" onclick="openTab('ubicaciones', event)">📍 Ubicaciones</button>
+        <button class="nav-btn" onclick="openTab('productos', event)">📦 Productos</button>
+        <button class="nav-btn" onclick="openTab('inventario', event)">🔢 Inventario</button>
+        <button class="nav-btn" onclick="openTab('picking', event)">🚀 Picking</button>
+        <button class="nav-btn" onclick="openTab('boleta', event)">🧾 Boleta</button>
+    </div>
+
+    <div class="container">
+        
+        <!-- ========== INICIO ========== -->
+        <div id="inicio" class="tab-content active">
+            <div class="card">
+                <h2>🚀 Configuración Inicial</h2>
+                <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 15px;">
+                    Antes de comenzar, define el tipo de inventario que vamos a trabajar.
+                </p>
+                <div id="setupPregunta">
+                    <button class="btn btn-success" style="margin-bottom: 10px;" onclick="iniciarSetup('nuevo')">
+                        ✨ Inventario Nuevo (desde cero)
+                    </button>
+                    <button class="btn btn-warning" onclick="iniciarSetup('existente')">
+                        📋 Inventario Establecido (ya existe mercancía)
+                    </button>
+                </div>
+                <div id="setupInfo" style="display:none;"></div>
+            </div>
+            
+            <div class="card" id="resumenCard" style="display:none;">
+                <h2>📊 Resumen Actual</h2>
+                <div class="row">
+                    <div style="background:#0b1120; padding:12px; border-radius:8px; text-align:center;">
+                        <div style="font-size:1.8rem; font-weight:800; color:var(--primary);" id="resUbi">0</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">Ubicaciones</div>
+                    </div>
+                    <div style="background:#0b1120; padding:12px; border-radius:8px; text-align:center;">
+                        <div style="font-size:1.8rem; font-weight:800; color:var(--success);" id="resProd">0</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">Productos</div>
+                    </div>
+                </div>
+                <div class="row" style="margin-top:10px;">
+                    <div style="background:#0b1120; padding:12px; border-radius:8px; text-align:center;">
+                        <div style="font-size:1.8rem; font-weight:800; color:var(--accent);" id="resCont">0</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">Contenedores</div>
+                    </div>
+                    <div style="background:#0b1120; padding:12px; border-radius:8px; text-align:center;">
+                        <div style="font-size:1.8rem; font-weight:800; color:var(--purple);" id="resUni">0</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">Unidades Totales</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" id="sugerenciasCard" style="display:none;">
+                <h2>💡 Sugerencias de Unificación</h2>
+                <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:10px;">
+                    Productos que están en múltiples ubicaciones. Puedes juntarlos para optimizar espacio.
+                </p>
+                <div id="listaSugerencias"></div>
+            </div>
+        </div>
+
+        <!-- ========== UBICACIONES ========== -->
+        <div id="ubicaciones" class="tab-content">
+            <div class="card">
+                <h2>➕ Crear Nueva Ubicación</h2>
+                <div class="row">
+                    <div class="form-group">
+                        <label>Piso</label>
+                        <select id="ubiPiso">
+                            <option value="P1">Piso 1 (Recepción)</option>
+                            <option value="P2">Piso 2</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Sector</label>
+                        <select id="ubiSector">
+                            <option value="A">Sector A (Cercano)</option>
+                            <option value="B">Sector B (Medio)</option>
+                            <option value="C">Sector C (Lejano)</option>
+                            <option value="PACKING">Sector Packing</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>Rack / Pilar</label>
+                        <input type="text" id="ubiRack" placeholder="R01" value="R01">
+                    </div>
+                    <div class="form-group">
+                        <label>Nivel</label>
+                        <input type="text" id="ubiNivel" placeholder="N01" value="N01">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Distancia desde Recepción (metros)</label>
+                    <input type="number" id="ubiDist" placeholder="10" value="10">
+                </div>
+                <button class="btn btn-primary" onclick="crearUbicacion()">➕ Crear Ubicación</button>
+            </div>
+
+            <div class="card">
+                <h2>📍 Ubicaciones Creadas</h2>
+                <div id="listaUbicaciones"></div>
+            </div>
+        </div>
+
+        <!-- ========== PRODUCTOS ========== -->
+        <div id="productos" class="tab-content">
+            <div class="card">
+                <h2>📂 Carga Masiva de Productos</h2>
+                <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 12px;">
+                    Sube un PDF, Excel o CSV con el listado de productos (Código, Descripción, Unidad).
+                </p>
+                
+                <div class="file-input-wrap" onclick="document.getElementById('fileProductos').click()">
+                    <input type="file" id="fileProductos" accept=".pdf,.xlsx,.xls,.csv,.txt" onchange="cargarArchivoProductos(event)">
+                    <div class="icon">📄</div>
+                    <div style="font-weight:600;">Toca para subir archivo</div>
+                    <div style="font-size:0.78rem; color:var(--text-muted); margin-top:6px;">PDF, Excel o CSV</div>
+                </div>
+
+                <h3 style="margin-top:15px;">O pega los datos aquí:</h3>
+                <div class="form-group">
+                    <textarea id="csvProductos" rows="5" placeholder="TOR-01, Tornillos 1/2, UN
+CLA-02, Clavos 2 pulgadas, CAJA
+CAB-03, Cable 2.5mm, M"></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="cargarProductosTexto()">📥 Cargar Productos</button>
+            </div>
+
+            <div class="card">
+                <h2>📦 Productos en Sistema (<span id="contProd">0</span>)</h2>
+                <div id="listaProductos"></div>
+            </div>
+        </div>
+
+        <!-- ========== INVENTARIO ========== -->
+        <div id="inventario" class="tab-content">
+            <div class="card">
+                <h2>🔢 Registrar Inventario por Ubicación</h2>
+                <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 12px;">
+                    Selecciona una ubicación y agrega los contenedores que contiene.
+                </p>
+                
+                <div class="form-group">
+                    <label>Ubicación</label>
+                    <select id="invUbicacion" onchange="renderContenedoresUbicacion()">
+                        <option value="">Selecciona una ubicación...</option>
+                    </select>
+                </div>
+
+                <div id="formContenedor" style="display:none; background:#0b1120; padding:12px; border-radius:8px; margin-top:10px;">
+                    <h3>Agregar Contenedor</h3>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>N° Contenedor</label>
+                            <input type="text" id="contCodigo" placeholder="C001" value="C001">
+                        </div>
+                        <div class="form-group">
+                            <label>Tipo</label>
+                            <select id="contTipo" onchange="toggleCantPorContenedor()">
+                                <option value="Fijo">Fijo (estantería)</option>
+                                <option value="Móvil">Móvil (caja reposición)</option>
+                                <option value="Desechable">Desechable (bolsa)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Producto</label>
+                        <select id="contProducto"></select>
+                    </div>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>Cantidad Total</label>
+                            <input type="number" id="contCantidad" value="1">
+                        </div>
+                        <div class="form-group" id="porContenedorWrap" style="display:none;">
+                            <label>Unidades por Contenedor</label>
+                            <input type="number" id="contUnidades" value="10" placeholder="Ej: 10">
+                        </div>
+                    </div>
+                    <button class="btn btn-success" onclick="agregarContenedor()">➕ Agregar Contenedor</button>
+                </div>
+
+                <div id="contenedoresUbicacion" style="margin-top:15px;"></div>
+            </div>
+
+            <div class="card">
+                <h2>📋 Todos los Contenedores</h2>
+                <div id="listaTodosContenedores"></div>
+            </div>
+        </div>
+
+        <!-- ========== PICKING ========== -->
+        <div id="picking" class="tab-content">
+            <div class="card">
+                <h2>📄 Cargar Documento de Picking</h2>
+                <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 12px;">
+                    Sube un PDF o Excel con el pedido (Código, Descripción, Cantidad).
+                </p>
+
+                <div class="file-input-wrap" onclick="document.getElementById('filePicking').click()">
+                    <input type="file" id="filePicking" accept=".pdf,.xlsx,.xls,.csv,.txt" onchange="cargarArchivoPicking(event)">
+                    <div class="icon">📄</div>
+                    <div style="font-weight:600;">Toca para subir pedido</div>
+                    <div style="font-size:0.78rem; color:var(--text-muted); margin-top:6px;">PDF, Excel o CSV</div>
+                </div>
+
+                <h3 style="margin-top:15px;">O pega los datos:</h3>
+                <div class="form-group">
+                    <textarea id="csvPicking" rows="4" placeholder="TOR-01, 5
+CLA-02, 3"></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="cargarPickingTexto()">📥 Cargar Pedido</button>
+            </div>
+
+            <div class="card">
+                <h2>🛒 Pedido Actual</h2>
+                <div id="pedidoActual"></div>
+                <div id="accionesPedido" style="display:none; margin-top:12px;">
+                    <div class="form-group">
+                        <label>¿Qué tipo de picking es?</label>
+                        <select id="tipoPicking">
+                            <option value="Packing">Para Packing (queda en bodega)</option>
+                            <option value="Inmediato">Entrega Inmediata (cliente espera)</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-success" onclick="generarRutaPicking()">🚀 Generar Ruta de Picking</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>🗺️ Ruta Óptima</h2>
+                <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:10px;">
+                    Ordenado del más lejano al más cercano, terminando en Recepción.
+                </p>
+                <div id="rutaPicking">
+                    <div class="empty-state">
+                        <div class="icon">🚀</div>
+                        <div>Carga un pedido para ver la ruta</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== BOLETA ========== -->
+        <div id="boleta" class="tab-content">
+            <div class="card">
+                <h2>🧾 Digitalizar Boleta</h2>
+                <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 12px;">
+                    1. Sube la boleta · 2. El cliente firma · 3. Comparte por WhatsApp
+                </p>
+
+                <div class="file-input-wrap" onclick="document.getElementById('fileBoleta').click()">
+                    <input type="file" id="fileBoleta" accept="image/*,.pdf" onchange="cargarBoleta(event)">
+                    <div class="icon">📷</div>
+                    <div style="font-weight:600;">Subir boleta</div>
+                    <div style="font-size:0.78rem; color:var(--text-muted); margin-top:6px;">Foto o PDF</div>
+                </div>
+
+                <div id="boletaPreview" style="margin-top:15px; display:none;">
+                    <h3>Boleta Cargada</h3>
+                    <div id="previewContenido" style="background:white; padding:10px; border-radius:8px; text-align:center;"></div>
+                </div>
+
+                <div id="firmaSection" style="display:none; margin-top:15px;">
+                    <h3>✍️ Firma del Cliente</h3>
+                    <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px;">Firma con tu dedo en el recuadro</p>
+                    <canvas id="firmaCanvas" class="signature-canvas"></canvas>
+                    <div class="row" style="margin-top:10px;">
+                        <button class="btn btn-small btn-danger" onclick="limpiarFirma()">🗑️ Limpiar</button>
+                        <button class="btn btn-small btn-success" onclick="guardarBoletaFirmada()">💾 Firmar y Guardar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>📤 Boletas Digitalizadas</h2>
+                <div id="listaBoletas"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Modal de confirmación -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <h2 id="modalTitle">Confirmar</h2>
+            <div id="modalBody"></div>
+            <div class="modal-btns" id="modalBtns"></div>
+        </div>
+    </div>
+
+    <!-- Modal de Sync -->
+    <div id="modalSync" class="modal">
+        <div class="modal-content">
+            <h2>☁️ Sincronización con GitHub</h2>
+            <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:15px;">
+                Configura tu Token y el ID del Gist secreto para respaldar los datos en la nube.
+            </p>
+            <div class="form-group">
+                <label>Token de GitHub</label>
+                <input type="password" id="syncToken" placeholder="ghp_...">
+            </div>
+            <div class="form-group">
+                <label>ID del Gist</label>
+                <input type="text" id="syncGistId" placeholder="a1b2c3d4e5f6...">
+            </div>
+            <div id="syncInfo" style="font-size:0.78rem; color:var(--text-muted); margin-bottom:10px;"></div>
+            
+            <div class="row" style="margin-bottom:10px;">
+                <button class="btn btn-small btn-primary" onclick="subirDatosAGist(false)">⬆️ Subir</button>
+                <button class="btn btn-small btn-success" onclick="cargarDatosDesdeGist()">⬇️ Descargar</button>
+            </div>
+            
+            <div class="modal-btns">
+                <button class="btn btn-danger" onclick="borrarConfigSync()">🗑️ Borrar</button>
+                <button class="btn btn-success" onclick="guardarConfigSync()">💾 Guardar</button>
+                <button class="btn btn-primary" onclick="cerrarModalSync()">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // ==========================================
+        // LIBRERÍAS
+        // ==========================================
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
+        // ==========================================
+        // BASE DE DATOS LOCAL
+        // ==========================================
+        let DB = JSON.parse(localStorage.getItem('vca_db_v2')) || {
+            tipo: null,
+            ubicaciones: [],
+            productos: [],
+            contenedores: [],
+            boletas: []
+        };
+
+        function saveDB() {
+            localStorage.setItem('vca_db_v2', JSON.stringify(DB));
+            // Subir automáticamente a Gist (en segundo plano)
+            if (tieneConfigSync()) {
+                subirDatosAGist(true);
+            }
+        }
+
+        // ==========================================
+        // UTILIDADES
+        // ==========================================
+        function showToast(msg, tipo = 'info') {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.style.borderColor = tipo === 'error' ? 'var(--danger)' : tipo === 'success' ? 'var(--success)' : 'var(--primary)';
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        function openTab(tabId, event) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            if (event) event.currentTarget.classList.add('active');
+            renderAll();
+        }
+
+        function resetAll() {
+            mostrarModal('¿Reiniciar todo?', 'Se borrarán todos los datos locales.', [
+                { text: 'Cancelar', cls: 'btn-primary', fn: cerrarModal },
+                { text: 'Reiniciar', cls: 'btn-danger', fn: () => {
+                    DB = { tipo: null, ubicaciones: [], productos: [], contenedores: [], boletas: [] };
+                    saveDB();
+                    cerrarModal();
+                    location.reload();
+                }}
+            ]);
+        }
+
+        function mostrarModal(titulo, cuerpo, botones) {
+            document.getElementById('modalTitle').textContent = titulo;
+            document.getElementById('modalBody').innerHTML = cuerpo;
+            const btns = document.getElementById('modalBtns');
+            btns.innerHTML = '';
+            botones.forEach(b => {
+                const btn = document.createElement('button');
+                btn.className = 'btn ' + b.cls;
+                btn.textContent = b.text;
+                btn.onclick = b.fn;
+                btns.appendChild(btn);
+            });
+            document.getElementById('modal').classList.add('show');
+        }
+
+        function cerrarModal() {
+            document.getElementById('modal').classList.remove('show');
+        }
+
+        // ==========================================
+        // SETUP INICIAL
+        // ==========================================
+        function iniciarSetup(tipo) {
+            DB.tipo = tipo;
+            saveDB();
+            document.getElementById('setupPregunta').style.display = 'none';
+            const info = document.getElementById('setupInfo');
+            info.style.display = 'block';
+            if (tipo === 'nuevo') {
+                info.innerHTML = '<div class="alert-box success">✅ <strong>Inventario Nuevo:</strong> Comenzamos desde cero.</div>';
+            } else {
+                info.innerHTML = '<div class="alert-box">📋 <strong>Inventario Establecido:</strong> Registra ubicaciones y cuenta.</div>';
+            }
+            document.getElementById('resumenCard').style.display = 'block';
+            renderAll();
+        }
+
+        // ==========================================
+        // UBICACIONES
+        // ==========================================
+        function crearUbicacion() {
+            const piso = document.getElementById('ubiPiso').value;
+            const sector = document.getElementById('ubiSector').value;
+            const rack = document.getElementById('ubiRack').value.trim().toUpperCase();
+            const nivel = document.getElementById('ubiNivel').value.trim().toUpperCase();
+            const dist = parseInt(document.getElementById('ubiDist').value) || 0;
+
+            if (!rack || !nivel) return showToast('Completa Rack y Nivel', 'error');
+
+            const codigo = `${piso}-${sector}-${rack}-${nivel}`;
+            if (DB.ubicaciones.find(u => u.codigo === codigo)) {
+                return showToast('❌ Esa ubicación ya existe', 'error');
+            }
+
+            DB.ubicaciones.push({ codigo, piso, sector, rack, nivel, distancia: dist });
+            saveDB();
+            showToast('✅ Ubicación creada', 'success');
+            renderAll();
+        }
+
+        function eliminarUbicacion(codigo) {
+            const contenedores = DB.contenedores.filter(c => c.ubicacion === codigo);
+            if (contenedores.length > 0) {
+                return showToast('⚠️ No se puede eliminar: tiene contenedores', 'error');
+            }
+            if (confirm(`¿Eliminar ubicación ${codigo}?`)) {
+                DB.ubicaciones = DB.ubicaciones.filter(u => u.codigo !== codigo);
+                saveDB();
+                renderAll();
+            }
+        }
+
+        // ==========================================
+        // PRODUCTOS
+        // ==========================================
+        async function cargarArchivoProductos(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const ext = file.name.split('.').pop().toLowerCase();
+            let texto = '';
+
+            try {
+                if (ext === 'pdf') texto = await leerPDF(file);
+                else if (ext === 'xlsx' || ext === 'xls') texto = await leerExcel(file);
+                else texto = await file.text();
+            } catch (e) {
+                showToast('Error leyendo archivo: ' + e.message, 'error');
+                return;
+            }
+
+            procesarProductos(texto);
+            event.target.value = '';
+        }
+
+        async function leerPDF(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let texto = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                const items = content.items;
+                let lineActual = '';
+                let yAnterior = null;
+                items.forEach(item => {
+                    if (yAnterior !== null && Math.abs(item.transform[5] - yAnterior) > 5) {
+                        texto += lineActual + '\n';
+                        lineActual = '';
+                    }
+                    lineActual += item.str + ' ';
+                    yAnterior = item.transform[5];
+                });
+                if (lineActual) texto += lineActual + '\n';
+            }
+            return texto;
+        }
+
+        async function leerExcel(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+            return rows.map(r => r.join(',')).join('\n');
+        }
+
+        function procesarProductos(texto) {
+            const lineas = texto.split('\n').filter(l => l.trim());
+            const nuevos = [];
+            lineas.forEach(linea => {
+                let partes = linea.split(/[,|\t]/).map(p => p.trim());
+                if (partes.length < 2) return;
+                if (/^(codigo|código|code|sku)/i.test(partes[0])) return;
+
+                const codigo = partes[0];
+                const desc = partes[1];
+                const unidad = partes[2] || 'UN';
+                
+                if (codigo && desc && !DB.productos.find(p => p.codigo === codigo)) {
+                    nuevos.push({ codigo, desc, unidad });
+                }
+            });
+
+            if (nuevos.length === 0) {
+                return showToast('No se detectaron productos nuevos', 'error');
+            }
+
+            DB.productos.push(...nuevos);
+            saveDB();
+            showToast(`✅ ${nuevos.length} productos cargados`, 'success');
+            renderAll();
+        }
+
+        function cargarProductosTexto() {
+            const texto = document.getElementById('csvProductos').value.trim();
+            if (!texto) return showToast('Pega algunos datos', 'error');
+            procesarProductos(texto);
+            document.getElementById('csvProductos').value = '';
+        }
+
+        // ==========================================
+        // INVENTARIO
+        // ==========================================
+        function toggleCantPorContenedor() {
+            const tipo = document.getElementById('contTipo').value;
+            document.getElementById('porContenedorWrap').style.display = tipo === 'Desechable' ? 'block' : 'none';
+        }
+
+        function agregarContenedor() {
+            const ubicacion = document.getElementById('invUbicacion').value;
+            const codigo = document.getElementById('contCodigo').value.trim();
+            const tipo = document.getElementById('contTipo').value;
+            const producto = document.getElementById('contProducto').value;
+            const cantidad = parseInt(document.getElementById('contCantidad').value) || 0;
+            const unidades = tipo === 'Desechable' ? parseInt(document.getElementById('contUnidades').value) || 0 : 0;
+
+            if (!ubicacion || !codigo || !producto || cantidad <= 0) {
+                return showToast('Completa todos los campos', 'error');
+            }
+
+            const prod = DB.productos.find(p => p.codigo === producto);
+            
+            DB.contenedores.push({
+                id: Date.now(),
+                ubicacion,
+                codigo,
+                tipo,
+                producto,
+                desc: prod.desc,
+                cantidad,
+                unidadesPorContenedor: unidades,
+                numContenedores: tipo === 'Desechable' && unidades > 0 ? Math.ceil(cantidad / unidades) : 0,
+                fecha: new Date().toISOString()
+            });
+
+            saveDB();
+            showToast('✅ Contenedor agregado', 'success');
+            document.getElementById('contCantidad').value = 1;
+            const existentes = DB.contenedores.filter(c => c.ubicacion === ubicacion);
+            document.getElementById('contCodigo').value = 'C' + String(existentes.length + 1).padStart(3, '0');
+            renderAll();
+            renderContenedoresUbicacion();
+        }
+
+        function eliminarContenedor(id) {
+            if (confirm('¿Eliminar este contenedor?')) {
+                DB.contenedores = DB.contenedores.filter(c => c.id !== id);
+                saveDB();
+                renderAll();
+                renderContenedoresUbicacion();
+            }
+        }
+
+        function renderContenedoresUbicacion() {
+            const ubicacion = document.getElementById('invUbicacion').value;
+            const cont = document.getElementById('contenedoresUbicacion');
+            const form = document.getElementById('formContenedor');
+            
+            if (!ubicacion) {
+                form.style.display = 'none';
+                cont.innerHTML = '';
+                return;
+            }
+            
+            form.style.display = 'block';
+            
+            const existentes = DB.contenedores.filter(c => c.ubicacion === ubicacion);
+            document.getElementById('contCodigo').value = 'C' + String(existentes.length + 1).padStart(3, '0');
+            
+            if (existentes.length === 0) {
+                cont.innerHTML = '<div class="empty-state"><div class="icon">📦</div><div>Sin contenedores en esta ubicación</div></div>';
+                return;
+            }
+            
+            cont.innerHTML = '<h3>Contenedores en esta ubicación:</h3>' + existentes.map(c => `
+                <div class="list-item">
+                    <div class="item-info">
+                        <strong>${c.codigo} <span class="badge badge-${c.tipo.toLowerCase()}">${c.tipo}</span></strong>
+                        <span>${c.desc} - ${c.cantidad} unidades${c.numContenedores > 0 ? ` (${c.numContenedores} cont. de ${c.unidadesPorContenedor})` : ''}</span>
+                    </div>
+                    <button class="btn btn-small btn-danger" onclick="eliminarContenedor(${c.id})">🗑️</button>
+                </div>
+            `).join('');
+        }
+
+        // ==========================================
+        // PICKING
+        // ==========================================
+        let pedidoActual = [];
+
+        async function cargarArchivoPicking(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const ext = file.name.split('.').pop().toLowerCase();
+            let texto = '';
+
+            try {
+                if (ext === 'pdf') texto = await leerPDF(file);
+                else if (ext === 'xlsx' || ext === 'xls') texto = await leerExcel(file);
+                else texto = await file.text();
+            } catch (e) {
+                showToast('Error: ' + e.message, 'error');
+                return;
+            }
+
+            procesarPicking(texto);
+            event.target.value = '';
+        }
+
+        function cargarPickingTexto() {
+            const texto = document.getElementById('csvPicking').value.trim();
+            if (!texto) return showToast('Pega algunos datos', 'error');
+            procesarPicking(texto);
+            document.getElementById('csvPicking').value = '';
+        }
+
+        function procesarPicking(texto) {
+            pedidoActual = [];
+            const lineas = texto.split('\n').filter(l => l.trim());
+            
+            lineas.forEach(linea => {
+                let partes = linea.split(/[,|\t]/).map(p => p.trim());
+                if (partes.length < 2) return;
+                if (/^(codigo|código|code|sku)/i.test(partes[0])) return;
+
+                const codigo = partes[0];
+                const cantidad = parseInt(partes[1]) || parseInt(partes[2]) || 0;
+                
+                if (codigo && cantidad > 0) {
+                    const prod = DB.productos.find(p => p.codigo === codigo);
+                    pedidoActual.push({
+                        codigo,
+                        desc: prod ? prod.desc : '(Producto no encontrado)',
+                        cantidad
+                    });
+                }
+            });
+
+            if (pedidoActual.length === 0) {
+                return showToast('No se detectaron ítems en el pedido', 'error');
+            }
+
+            showToast(`✅ ${pedidoActual.length} ítems cargados`, 'success');
+            renderAll();
+        }
+
+        function generarRutaPicking() {
+            if (pedidoActual.length === 0) return showToast('Carga un pedido primero', 'error');
+
+            const tipo = document.getElementById('tipoPicking').value;
+            const tareas = [];
+
+            pedidoActual.forEach(item => {
+                const conts = DB.contenedores
+                    .filter(c => c.producto === item.codigo && c.cantidad > 0)
+                    .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+                
+                let restante = item.cantidad;
+
+                for (const c of conts) {
+                    if (restante <= 0) break;
+                    const ubi = DB.ubicaciones.find(u => u.codigo === c.ubicacion);
+                    const sacar = Math.min(c.cantidad, restante);
+                    
+                    tareas.push({
+                        ubicacion: c.ubicacion,
+                        distancia: ubi ? ubi.distancia : 0,
+                        producto: item.desc,
+                        codigo: item.codigo,
+                        cantidad: sacar,
+                        contenedor: c.codigo,
+                        tipoCont: c.tipo
+                    });
+                    
+                    restante -= sacar;
+                }
+
+                if (restante > 0) {
+                    tareas.push({
+                        ubicacion: '⚠️ SIN STOCK',
+                        distancia: 0,
+                        producto: item.desc,
+                        codigo: item.codigo,
+                        cantidad: restante,
+                        contenedor: 'FALTA',
+                        falta: true
+                    });
+                }
+            });
+
+            tareas.sort((a, b) => b.distancia - a.distancia);
+
+            const pasoFinal = tipo === 'Packing' 
+                ? { ubicacion: 'P1-PACKING', producto: 'Empacar y Almacenar', distancia: 0, final: true, tipo }
+                : { ubicacion: 'P1-RECEPCION', producto: 'Entregar al Cliente', distancia: 0, final: true, tipo };
+
+            tareas.push(pasoFinal);
+
+            const container = document.getElementById('rutaPicking');
+            container.innerHTML = `<div class="alert-box success">✅ Ruta generada: <strong>${tipo === 'Packing' ? 'PARA PACKING' : 'ENTREGA INMEDIATA'}</strong></div>`;
+            
+            tareas.forEach((t, i) => {
+                const div = document.createElement('div');
+                div.className = 'route-step ' + (t.final ? 'final' : (t.falta ? 'danger' : ''));
+                div.innerHTML = `
+                    <div class="step-num">${i + 1}</div>
+                    <div class="step-info">
+                        <strong>${t.ubicacion}</strong>
+                        <span>${t.producto} ${t.contenedor !== 'FALTA' && !t.final ? `(${t.contenedor})` : ''}</span>
+                    </div>
+                    <div class="step-qty" style="${t.falta ? 'color:var(--danger)' : ''}">${t.final ? '🏁' : 'x' + t.cantidad}</div>
+                `;
+                container.appendChild(div);
+            });
+
+            const tareasNoFinal = tareas.filter(t => !t.final && !t.falta);
+            if (tareasNoFinal.length > 0) {
+                const alerta = document.createElement('div');
+                alerta.className = 'alert-box';
+                alerta.innerHTML = `⚠️ <strong>Recordatorio:</strong> Al terminar, revisa si la ubicación <strong>${tareasNoFinal[0].ubicacion}</strong> quedó vacía y marca para reposición.`;
+                container.appendChild(alerta);
+            }
+        }
+
+        // ==========================================
+        // BOLETA
+        // ==========================================
+        let boletaActual = null;
+        let canvas, ctx, dibujando = false;
+
+        function cargarBoleta(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                boletaActual = { nombre: file.name, dataUrl: e.target.result, tipo: file.type };
+                document.getElementById('boletaPreview').style.display = 'block';
+                
+                if (file.type.startsWith('image/')) {
+                    document.getElementById('previewContenido').innerHTML = `<img src="${e.target.result}" style="max-width:100%; max-height:300px; border-radius:6px;">`;
+                } else {
+                    document.getElementById('previewContenido').innerHTML = `<div style="padding:20px;">📄 ${file.name}</div>`;
+                }
+                
+                document.getElementById('firmaSection').style.display = 'block';
+                initCanvas();
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        }
+
+        function initCanvas() {
+            canvas = document.getElementById('firmaCanvas');
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = 200;
+            ctx = canvas.getContext('2d');
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+
+            canvas.onmousedown = canvas.ontouchstart = (e) => {
+                dibujando = true;
+                const pos = getPos(e);
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+            };
+            canvas.onmousemove = canvas.ontouchmove = (e) => {
+                if (!dibujando) return;
+                e.preventDefault();
+                const pos = getPos(e);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+            };
+            canvas.onmouseup = canvas.ontouchend = () => dibujando = false;
+            canvas.onmouseleave = () => dibujando = false;
+        }
+
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+
+        function limpiarFirma() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function guardarBoletaFirmada() {
+            if (!boletaActual) return;
+            
+            const firmaData = canvas.toDataURL('image/png');
+            
+            DB.boletas.push({
+                id: Date.now(),
+                nombre: boletaActual.nombre,
+                dataUrl: boletaActual.dataUrl,
+                firma: firmaData,
+                fecha: new Date().toLocaleString()
+            });
+            
+            saveDB();
+            showToast('✅ Boleta firmada y guardada', 'success');
+            
+            boletaActual = null;
+            document.getElementById('boletaPreview').style.display = 'none';
+            document.getElementById('firmaSection').style.display = 'none';
+            renderAll();
+        }
+
+        function descargarBoleta(id) {
+            const b = DB.boletas.find(x => x.id === id);
+            if (!b) return;
+            const a = document.createElement('a');
+            a.href = b.dataUrl;
+            a.download = 'boleta_' + id + '_' + b.nombre;
+            a.click();
+        }
+
+        async function compartirBoleta(id) {
+            const b = DB.boletas.find(x => x.id === id);
+            if (!b) return;
+            try {
+                const res = await fetch(b.dataUrl);
+                const blob = await res.blob();
+                const file = new File([blob], b.nombre, { type: blob.type });
+                if (navigator.share && navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: 'Boleta Firmada' });
+                    showToast('✅ Compartida', 'success');
+                } else {
+                    descargarBoleta(id);
+                }
+            } catch (e) { descargarBoleta(id); }
+        }
+
+        // ==========================================
+        // SUGERENCIAS
+        // ==========================================
+        function generarSugerencias() {
+            const prodPorUbicacion = {};
+            DB.contenedores.forEach(c => {
+                if (!prodPorUbicacion[c.producto]) prodPorUbicacion[c.producto] = new Set();
+                prodPorUbicacion[c.producto].add(c.ubicacion);
+            });
+            const sugerencias = [];
+            for (const [prod, ubis] of Object.entries(prodPorUbicacion)) {
+                if (ubis.size > 1) {
+                    const p = DB.productos.find(x => x.codigo === prod);
+                    sugerencias.push({
+                        producto: prod,
+                        desc: p ? p.desc : prod,
+                        ubicaciones: Array.from(ubis)
+                    });
+                }
+            }
+            return sugerencias;
+        }
+
+        // ==========================================
+        // SINCRONIZACIÓN CON GITHUB GIST
+        // ==========================================
+        const GIST_TOKEN_KEY = 'vca_gist_token';
+        const GIST_ID_KEY = 'vca_gist_id';
+
+        function getGistToken() { return localStorage.getItem(GIST_TOKEN_KEY) || ''; }
+        function getGistId() { return localStorage.getItem(GIST_ID_KEY) || ''; }
+        function tieneConfigSync() { return getGistToken() && getGistId(); }
+
+        function actualizarBadgeSync(estado, texto) {
+            const badge = document.getElementById('syncBadge');
+            const text = document.getElementById('syncBadgeText');
+            const statusText = document.getElementById('syncStatusText');
+            
+            badge.className = 'sync-badge ' + estado;
+            text.textContent = texto;
+            statusText.textContent = estado === 'connected' ? 'Sincronizado' : 
+                                     estado === 'syncing' ? 'Sincronizando...' : 
+                                     estado === 'error' ? 'Error de sync' : 'Sin configurar';
+        }
+
+        function actualizarInfoSync() {
+            const info = document.getElementById('syncInfo');
+            if (tieneConfigSync()) {
+                info.innerHTML = `<div class="alert-box success">✅ Configurado. Token: ****${getGistToken().slice(-4)}</div>`;
+                actualizarBadgeSync('connected', 'Sync OK');
+            } else {
+                info.innerHTML = `<div class="alert-box">⚠️ Sin configurar</div>`;
+                actualizarBadgeSync('', 'Sync');
+            }
+        }
+
+        function abrirModalSync() {
+            document.getElementById('syncToken').value = getGistToken();
+            document.getElementById('syncGistId').value = getGistId();
+            actualizarInfoSync();
+            document.getElementById('modalSync').classList.add('show');
+        }
+
+        function cerrarModalSync() {
+            document.getElementById('modalSync').classList.remove('show');
+        }
+
+        function guardarConfigSync() {
+            const token = document.getElementById('syncToken').value.trim();
+            const id = document.getElementById('syncGistId').value.trim();
+            
+            if (!token || !id) return showToast('Completa ambos campos', 'error');
+            
+            localStorage.setItem(GIST_TOKEN_KEY, token);
+            localStorage.setItem(GIST_ID_KEY, id);
+            
+            actualizarInfoSync();
+            showToast('✅ Configuración guardada', 'success');
+            
+            // Intentar subir datos inmediatamente
+            subirDatosAGist(false);
+        }
+
+        function borrarConfigSync() {
+            if (!confirm('¿Borrar configuración de sync?')) return;
+            localStorage.removeItem(GIST_TOKEN_KEY);
+            localStorage.removeItem(GIST_ID_KEY);
+            document.getElementById('syncToken').value = '';
+            document.getElementById('syncGistId').value = '';
+            actualizarInfoSync();
+            showToast('Configuración borrada', 'success');
+        }
+
+        async function subirDatosAGist(silencioso = false) {
+            if (!tieneConfigSync()) {
+                if (!silencioso) showToast('⚠️ Configura el sync primero', 'error');
+                return false;
+            }
+
+            if (!silencioso) actualizarBadgeSync('syncing', 'Subiendo...');
+
+            try {
+                const contenido = JSON.stringify(DB, null, 2);
+                const response = await fetch(`https://api.github.com/gists/${getGistId()}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${getGistToken()}`,
+                        'Accept': 'application/vnd.github+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        files: {
+                            'datos-bodega.json': { content: contenido }
+                        }
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.message || 'Error al subir');
+                }
+
+                if (!silencioso) {
+                    showToast('☁️ Datos subidos', 'success');
+                    actualizarBadgeSync('connected', 'Sync OK');
+                }
+                return true;
+            } catch (error) {
+                console.error('Error subiendo:', error);
+                if (!silencioso) {
+                    showToast('❌ ' + error.message, 'error');
+                    actualizarBadgeSync('error', 'Error');
+                }
+                return false;
+            }
+        }
+
+        async function cargarDatosDesdeGist() {
+            if (!tieneConfigSync()) return false;
+
+            actualizarBadgeSync('syncing', 'Bajando...');
+
+            try {
+                const response = await fetch(`https://api.github.com/gists/${getGistId()}`, {
+                    headers: {
+                        'Authorization': `Bearer ${getGistToken()}`,
+                        'Accept': 'application/vnd.github+json'
+                    }
+                });
+
+                if (!response.ok) throw new Error('No se pudo leer el Gist');
+                const gist = await response.json();
+                const file = gist.files['datos-bodega.json'];
+                
+                if (!file) {
+                    showToast('⚠️ El Gist no tiene datos aún', 'error');
+                    actualizarBadgeSync('connected', 'Sync OK');
+                    return false;
+                }
+
+                const datosRemotos = JSON.parse(file.content);
+                
+                if (datosRemotos.ubicaciones !== undefined) {
+                    DB = datosRemotos;
+                    localStorage.setItem('vca_db_v2', JSON.stringify(DB));
+                    showToast('☁️ Datos cargados desde la nube', 'success');
+                    actualizarBadgeSync('connected', 'Sync OK');
+                    renderAll();
+                    return true;
+                }
+            } catch (error) {
+                console.warn('Error cargando:', error);
+                if (!error.message.includes('404')) {
+                    showToast('⚠️ ' + error.message, 'error');
+                }
+                actualizarBadgeSync('connected', 'Sync OK');
+            }
+            return false;
+        }
+
+        // ==========================================
+        // RENDERIZADO GENERAL
+        // ==========================================
+        function renderAll() {
+            document.getElementById('resUbi').textContent = DB.ubicaciones.length;
+            document.getElementById('resProd').textContent = DB.productos.length;
+            document.getElementById('resCont').textContent = DB.contenedores.length;
+            document.getElementById('resUni').textContent = DB.contenedores.reduce((s, c) => s + c.cantidad, 0);
+            document.getElementById('contProd').textContent = DB.productos.length;
+
+            const sugs = generarSugerencias();
+            const sugCard = document.getElementById('sugerenciasCard');
+            if (sugs.length > 0 && DB.tipo) {
+                sugCard.style.display = 'block';
+                document.getElementById('listaSugerencias').innerHTML = sugs.map(s => `
+                    <div class="list-item warning">
+                        <div class="item-info">
+                            <strong>${s.desc} (${s.producto})</strong>
+                            <span>Está en: ${s.ubicaciones.join(', ')}</span>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                sugCard.style.display = 'none';
+            }
+
+            const listaUbi = document.getElementById('listaUbicaciones');
+            if (DB.ubicaciones.length === 0) {
+                listaUbi.innerHTML = '<div class="empty-state"><div class="icon">📍</div><div>Sin ubicaciones creadas</div></div>';
+            } else {
+                listaUbi.innerHTML = DB.ubicaciones.map(u => {
+                    const conts = DB.contenedores.filter(c => c.ubicacion === u.codigo);
+                    return `<div class="list-item">
+                        <div class="item-info">
+                            <strong>${u.codigo}</strong>
+                            <span>Distancia: ${u.distancia}m · ${conts.length} contenedor(es)</span>
+                        </div>
+                        <button class="btn btn-small btn-danger" onclick="eliminarUbicacion('${u.codigo}')">🗑️</button>
+                    </div>`;
+                }).join('');
+            }
+
+            const listaProd = document.getElementById('listaProductos');
+            if (DB.productos.length === 0) {
+                listaProd.innerHTML = '<div class="empty-state"><div class="icon">📦</div><div>Sin productos cargados</div></div>';
+            } else {
+                listaProd.innerHTML = DB.productos.slice(0, 100).map(p => `
+                    <div class="list-item">
+                        <div class="item-info">
+                            <strong>${p.codigo}</strong>
+                            <span>${p.desc} (${p.unidad})</span>
+                        </div>
+                    </div>
+                `).join('') + (DB.productos.length > 100 ? `<div style="text-align:center; padding:10px; color:var(--text-muted);">... y ${DB.productos.length - 100} más</div>` : '');
+            }
+
+            const selInv = document.getElementById('invUbicacion');
+            const selInvVal = selInv.value;
+            selInv.innerHTML = '<option value="">Selecciona una ubicación...</option>' + 
+                DB.ubicaciones.map(u => `<option value="${u.codigo}">${u.codigo}</option>`).join('');
+            if (selInvVal) selInv.value = selInvVal;
+
+            const selProd = document.getElementById('contProducto');
+            selProd.innerHTML = '<option value="">Selecciona...</option>' + 
+                DB.productos.map(p => `<option value="${p.codigo}">${p.codigo} - ${p.desc}</option>`).join('');
+
+            const listaTodos = document.getElementById('listaTodosContenedores');
+            if (DB.contenedores.length === 0) {
+                listaTodos.innerHTML = '<div class="empty-state"><div class="icon">📋</div><div>Sin contenedores registrados</div></div>';
+            } else {
+                listaTodos.innerHTML = DB.contenedores.map(c => `
+                    <div class="list-item">
+                        <div class="item-info">
+                            <strong>${c.codigo} <span class="badge badge-${c.tipo.toLowerCase()}">${c.tipo}</span></strong>
+                            <span>${c.ubicacion} · ${c.desc} · ${c.cantidad} unidades</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            const pedDiv = document.getElementById('pedidoActual');
+            const accDiv = document.getElementById('accionesPedido');
+            if (pedidoActual.length === 0) {
+                pedDiv.innerHTML = '<div class="empty-state"><div class="icon">🛒</div><div>Sin pedido cargado</div></div>';
+                accDiv.style.display = 'none';
+            } else {
+                pedDiv.innerHTML = pedidoActual.map(p => `
+                    <div class="list-item">
+                        <div class="item-info">
+                            <strong>${p.codigo}</strong>
+                            <span>${p.desc}</span>
+                        </div>
+                        <div class="step-qty">x${p.cantidad}</div>
+                    </div>
+                `).join('');
+                accDiv.style.display = 'block';
+            }
+
+            const listaBol = document.getElementById('listaBoletas');
+            if (DB.boletas.length === 0) {
+                listaBol.innerHTML = '<div class="empty-state"><div class="icon">🧾</div><div>Sin boletas digitalizadas</div></div>';
+            } else {
+                listaBol.innerHTML = DB.boletas.map(b => `
+                    <div class="list-item success">
+                        <div class="item-info">
+                            <strong>${b.nombre}</strong>
+                            <span>${b.fecha}</span>
+                        </div>
+                        <div class="item-actions">
+                            <button class="btn btn-small btn-success" onclick="compartirBoleta(${b.id})">📤</button>
+                            <button class="btn btn-small btn-primary" onclick="descargarBoleta(${b.id})">⬇️</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        window.addEventListener('load', async () => {
+            if (DB.tipo) {
+                document.getElementById('setupPregunta').style.display = 'none';
+                document.getElementById('setupInfo').style.display = 'block';
+                document.getElementById('setupInfo').innerHTML = `<div class="alert-box success">✅ Tipo de inventario: <strong>${DB.tipo === 'nuevo' ? 'Nuevo' : 'Establecido'}</strong></div>`;
+                document.getElementById('resumenCard').style.display = 'block';
+            }
+            
+            renderAll();
+            actualizarInfoSync();
+
+            // Intentar cargar datos desde el Gist si está configurado
+            if (tieneConfigSync()) {
+                setTimeout(async () => {
+                    await cargarDatosDesdeGist();
+                }, 500);
+            }
+        });
+
+    </script>
+</body>
+</html>
